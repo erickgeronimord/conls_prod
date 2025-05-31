@@ -13,19 +13,16 @@ st.set_page_config(
     }
 )
 
-# 3. Otras importaciones
-import pandas as pd
-import plotly.express as px
-from io import BytesIO
-
-# Verificar e instalar xlsxwriter si es necesario
+# 3. Otras importaciones con manejo de errores
 try:
-    import xlsxwriter
-except ImportError:
-    import sys
-    import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "xlsxwriter"])
-    import xlsxwriter
+    import pandas as pd
+    import plotly.express as px
+    from io import BytesIO
+    import xlsxwriter  # Intenta importar directamente
+    
+except ImportError as e:
+    st.error(f"❌ Error: Faltan dependencias requeridas. Por favor instale: {str(e)}")
+    st.stop()  # Detiene la ejecución si faltan paquetes
 
 # 4. Inicio de la aplicación
 st.title("📊 Consulta de Ventas por Producto")
@@ -181,7 +178,7 @@ if uploaded_file:
                 })
             )
             
-            # Métricas (ACTUALIZADO CON TICKET PROMEDIO)
+            # Métricas
             total_cant = resultado['Cantidad'].sum()
             total_monto = resultado['MONTO'].sum()
             transacciones = resultado['Documento'].nunique()
@@ -191,40 +188,11 @@ if uploaded_file:
             st.subheader("📊 Totales")
             col1, col2, col3, col4, col5 = st.columns(5)
             
-            # Columna 1: Total Unidades
-            col1.metric(
-                "Total Unidades", 
-                f"{total_cant:,.0f}",
-                help="Cantidad total de productos vendidos"
-            )
-            
-            # Columna 2: Total Ventas
-            col2.metric(
-                "Total Ventas", 
-                f"${total_monto:,.2f}",
-                help="Valor total en dinero de las ventas"
-            )
-            
-            # Columna 3: Precio Promedio
-            col3.metric(
-                "Precio Promedio", 
-                f"${avg_price:,.2f}",
-                help="Precio promedio por unidad vendida"
-            )
-            
-            # Columna 4: Ticket Promedio (NUEVO)
-            col4.metric(
-                "Ticket Promedio", 
-                f"${ticket_promedio:,.2f}",
-                help="Valor promedio por transacción (venta/documento)"
-            )
-            
-            # Columna 5: Transacciones
-            col5.metric(
-                "Transacciones", 
-                f"{transacciones:,.0f}",
-                help="Número total de transacciones/documentos"
-            )
+            col1.metric("Total Unidades", f"{total_cant:,.0f}")
+            col2.metric("Total Ventas", f"${total_monto:,.2f}")
+            col3.metric("Precio Promedio", f"${avg_price:,.2f}")
+            col4.metric("Ticket Promedio", f"${ticket_promedio:,.2f}")
+            col5.metric("Transacciones", f"{transacciones:,.0f}")
             
             # Gráfico de línea
             if len(resultado) > 1:
@@ -245,30 +213,35 @@ if uploaded_file:
                 fig.update_traces(line_color='#FF4B4B', marker_color='#FF4B4B')
                 st.plotly_chart(fig, use_container_width=True)
             
-            # Exportación
+            # Exportación con manejo alternativo si falla xlsxwriter
             st.subheader("💾 Exportar Resultados")
             export_format = st.radio("Formato de exportación:", ["Excel", "CSV"])
             
-            if export_format == "Excel":
-                output = BytesIO()
-                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                    resultado.drop(columns=['Fecha_mostrar']).to_excel(
-                        writer, index=False, sheet_name='Detalle')
-                    if group_by != "Ninguno":
-                        grouped.to_excel(writer, index=False, sheet_name='Agrupado')
-                st.download_button(
-                    label="⬇️ Descargar Excel",
-                    data=output.getvalue(),
-                    file_name="reporte_ventas.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-            else:
-                st.download_button(
-                    label="⬇️ Descargar CSV",
-                    data=resultado.drop(columns=['Fecha_mostrar'])
-                        .to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8'),
-                    file_name="reporte_ventas.csv",
-                    mime="text/csv"
-                )
+            try:
+                if export_format == "Excel":
+                    output = BytesIO()
+                    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                        resultado.drop(columns=['Fecha_mostrar']).to_excel(
+                            writer, index=False, sheet_name='Detalle')
+                        if group_by != "Ninguno":
+                            grouped.to_excel(writer, index=False, sheet_name='Agrupado')
+                    st.download_button(
+                        label="⬇️ Descargar Excel",
+                        data=output.getvalue(),
+                        file_name="reporte_ventas.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+                else:
+                    st.download_button(
+                        label="⬇️ Descargar CSV",
+                        data=resultado.drop(columns=['Fecha_mostrar'])
+                            .to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8'),
+                        file_name="reporte_ventas.csv",
+                        mime="text/csv"
+                    )
+            except Exception as e:
+                st.error(f"Error al exportar: {str(e)}")
+                st.info("ℹ️ Si el error persiste, intente exportar como CSV o instale xlsxwriter manualmente")
+                
         else:
             st.warning("⚠️ No se encontraron resultados con los filtros aplicados")
