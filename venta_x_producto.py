@@ -1,7 +1,7 @@
-# 1. Importar streamlit primero - ESENCIAL
+# 1. Importar streamlit primero
 import streamlit as st
 
-# 2. Configuración de página - DEBE SER LO SIGUIENTE
+# 2. Configuración de página
 st.set_page_config(
     page_title="Consulta de Ventas",
     layout="wide",
@@ -9,36 +9,31 @@ st.set_page_config(
     menu_items={
         'Get Help': 'https://www.example.com/help',
         'Report a bug': "https://www.example.com/bug",
-        'About': "# Esta es una aplicación de análisis de ventas"
+        'About': "# Aplicación de análisis de ventas"
     }
 )
 
-# 3. Ahora el resto de importaciones
+# 3. Otras importaciones
 import pandas as pd
 import plotly.express as px
 from io import BytesIO
-import warnings
-warnings.filterwarnings('ignore')
 
 # 4. Inicio de la aplicación
 st.title("📊 Consulta de Ventas por Producto")
 
-# Función para cargar datos con caché
+# Función para cargar datos
 @st.cache_data
 def load_data(uploaded_file):
     try:
         df = pd.read_excel(uploaded_file)
         
-        # Validar columnas requeridas
         required_columns = ['CLIENTE', 'COD_PROD', 'Descripcion', 'Documento', 'Fecha', 
                           'Cantidad', 'VENDEDOR', 'MES', 'YEAR', 'MONTO']
         if not all(col in df.columns for col in required_columns):
             st.error("❌ El archivo no contiene las columnas requeridas")
-            st.error(f"Columnas encontradas: {df.columns.tolist()}")
-            st.error(f"Columnas esperadas: {required_columns}")
             return None
             
-        # Convertir tipos de datos
+        # Conversión de tipos
         df['Fecha'] = pd.to_datetime(df['Fecha'], dayfirst=True, errors='coerce')
         df['COD_PROD'] = df['COD_PROD'].astype(str)
         df['VENDEDOR'] = df['VENDEDOR'].astype(str)
@@ -120,8 +115,119 @@ if uploaded_file:
             
             st.subheader(titulo)
             
-            # [Resto del código de visualización...]
-            # ... (mantener el mismo código de visualización de tablas, gráficos y exportación)
-
+            # Agrupación de datos
+            if group_by != "Ninguno":
+                if group_by == "Mes":
+                    resultado['Grupo'] = resultado['Fecha'].dt.to_period('M').astype(str)
+                elif group_by == "Año":
+                    resultado['Grupo'] = resultado['Fecha'].dt.year.astype(str)
+                elif group_by == "Vendedor":
+                    resultado['Grupo'] = resultado['VENDEDOR']
+                else:  # Cliente
+                    resultado['Grupo'] = resultado['CLIENTE']
+                
+                grouped = resultado.groupby('Grupo').agg({
+                    'Cantidad': 'sum',
+                    'MONTO': 'sum',
+                    'Documento': 'nunique'
+                }).reset_index()
+                grouped.rename(columns={'Documento': 'Transacciones'}, inplace=True)
+                
+                st.subheader(f"📊 Ventas agrupadas por {group_by.lower()}")
+                st.dataframe(grouped)
+                
+                # GRÁFICO DE BARRAS - CORRECCIÓN AQUÍ
+                if not grouped.empty:
+                    fig = px.bar(
+                        grouped,
+                        x='Grupo',
+                        y='MONTO',
+                        text='MONTO',
+                        title=f"Ventas por {group_by.lower()}",
+                        labels={'MONTO': 'Monto Total', 'Grupo': group_by},
+                        hover_data=['Cantidad', 'Transacciones']
+                    )
+                    fig.update_traces(
+                        texttemplate='%{text:,.2f}',
+                        textposition='outside',
+                        marker_color='#4CAF50'
+                    )
+                    fig.update_layout(
+                        xaxis_title=group_by,
+                        yaxis_title="Monto Total",
+                        height=500
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+            
+            # Detalle de transacciones
+            st.subheader("📋 Detalle de transacciones")
+            columnas_mostrar = [
+                'CLIENTE', 'VENDEDOR', 'Fecha_mostrar', 'Documento', 
+                'Descripcion', 'Cantidad', 'MONTO'
+            ]
+            st.dataframe(
+                resultado[columnas_mostrar].rename(columns={
+                    'Fecha_mostrar': 'Fecha',
+                    'MONTO': 'Monto'
+                })
+            )
+            
+            # Métricas
+            total_cant = resultado['Cantidad'].sum()
+            total_monto = resultado['MONTO'].sum()
+            transacciones = resultado['Documento'].nunique()
+            avg_price = total_monto / total_cant if total_cant > 0 else 0
+            
+            st.subheader("📊 Totales")
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("Total Unidades", f"{total_cant:,.0f}")
+            col2.metric("Total Ventas", f"${total_monto:,.2f}")
+            col3.metric("Precio Promedio", f"${avg_price:,.2f}")
+            col4.metric("Transacciones", f"{transacciones:,.0f}")
+            
+            # GRÁFICO DE LÍNEA - CORRECCIÓN AQUÍ
+            if len(resultado) > 1:
+                fig = px.line(
+                    resultado,
+                    x='Fecha',
+                    y='MONTO',
+                    title='Evolución de Ventas por Fecha',
+                    markers=True,
+                    labels={'MONTO': 'Monto', 'Fecha': 'Fecha'},
+                    hover_data=['CLIENTE', 'VENDEDOR', 'Cantidad']
+                )
+                fig.update_layout(
+                    xaxis_title="Fecha",
+                    yaxis_title="Monto",
+                    height=500
+                )
+                fig.update_traces(line_color='#FF4B4B', marker_color='#FF4B4B')
+                st.plotly_chart(fig, use_container_width=True)
+            
+            # Exportación
+            st.subheader("💾 Exportar Resultados")
+            export_format = st.radio("Formato de exportación:", ["Excel", "CSV"])
+            
+            if export_format == "Excel":
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                    resultado.drop(columns=['Fecha_mostrar']).to_excel(
+                        writer, index=False, sheet_name='Detalle')
+                    if group_by != "Ninguno":
+                        grouped.to_excel(writer, index=False, sheet_name='Agrupado')
+                st.download_button(
+                    label="⬇️ Descargar Excel",
+                    data=output.getvalue(),
+                    file_name="reporte_ventas.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            else:
+                st.download_button(
+                    label="⬇️ Descargar CSV",
+                    data=resultado.drop(columns=['Fecha_mostrar'])
+                        .to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8'),
+                    file_name="reporte_ventas.csv",
+                    mime="text/csv"
+                )
         else:
             st.warning("⚠️ No se encontraron resultados con los filtros aplicados")
