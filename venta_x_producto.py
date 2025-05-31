@@ -1,4 +1,20 @@
 import streamlit as st
+# Configuración DEBE SER PRIMERO
+st.set_page_config(page_title="Panel de Ventas", layout="wide")
+
+import pandas as pd
+import altair as alt  # Usando Altair en lugar de Plotly
+
+# Resto de tu código...
+# Reemplaza cualquier gráfico de Plotly con Altair:
+def grafico_alternativo(df):
+    chart = alt.Chart(df).mark_bar().encode(
+        x='Producto:N',
+        y='Ventas:Q'
+    )
+    st.altair_chart(chart, use_container_width=True)
+
+import streamlit as st
 import pandas as pd
 import plotly.express as px
 from io import BytesIO
