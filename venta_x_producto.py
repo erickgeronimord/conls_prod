@@ -1,107 +1,210 @@
-with tab4:
-    st.subheader("🔍 Consulta de Ventas por Producto")
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+from io import BytesIO
+
+# Configuración de la página
+st.set_page_config(page_title="Consulta de Ventas", layout="wide", page_icon="📊")
+st.title("📊 Consulta de Ventas por Producto")
+
+# Función para cargar datos con caché
+@st.cache_data
+def load_data(uploaded_file):
+    try:
+        df = pd.read_excel(uploaded_file)
+        
+        # Validar columnas requeridas
+        required_columns = ['CLIENTE', 'COD_PROD', 'Descripcion', 'Documento', 'Fecha', 
+                          'Cantidad', 'VENDEDOR', 'MES', 'YEAR', 'MONTO']
+        if not all(col in df.columns for col in required_columns):
+            st.error("❌ El archivo no contiene las columnas requeridas")
+            st.error(f"Columnas encontradas: {df.columns.tolist()}")
+            st.error(f"Columnas esperadas: {required_columns}")
+            return None
+            
+        # Convertir tipos de datos - Formato día/mes/año
+        df['Fecha'] = pd.to_datetime(df['Fecha'], dayfirst=True, errors='coerce')
+        df['COD_PROD'] = df['COD_PROD'].astype(str)
+        df['VENDEDOR'] = df['VENDEDOR'].astype(str)
+        df['MONTO'] = pd.to_numeric(df['MONTO'], errors='coerce')
+        df['Cantidad'] = pd.to_numeric(df['Cantidad'], errors='coerce')
+        
+        # Verificar fechas inválidas
+        if df['Fecha'].isnull().any():
+            st.warning("⚠️ Algunas fechas no pudieron ser interpretadas (se marcaron como nulas)")
+        
+        return df
+        
+    except Exception as e:
+        st.error(f"❌ Error al cargar el archivo: {str(e)}")
+        return None
+
+# Subir archivo
+uploaded_file = st.file_uploader("📁 Sube el archivo Excel", type=["xlsx"])
+
+if uploaded_file:
+    df = load_data(uploaded_file)
     
-    # 1. Verificar columnas obligatorias
-    columnas_requeridas = ['CANTIDAD', 'MONTO']
-    columnas_faltantes = [col for col in columnas_requeridas if col not in datos.columns]
-    
-    if columnas_faltantes:
-        st.error(f"Error: Faltan columnas requeridas: {', '.join(columnas_faltantes)}")
-        st.stop()  # Detener ejecución si faltan columnas críticas
-    
-    # 2. Manejo flexible de fechas (buscar posibles nombres)
-    fecha_col = None
-    posibles_nombres_fecha = ['FECHA', 'FECHA_VENTA', 'DATE', 'FECHACOMPRA']
-    
-    for nombre in posibles_nombres_fecha:
-        if nombre in datos.columns:
-            fecha_col = nombre
-            datos['FECHA_DT'] = pd.to_datetime(datos[nombre], errors='coerce')
-            break
-    
-    if fecha_col is None:
-        st.error("No se encontró ninguna columna de fecha válida")
-        st.stop()
-    
-    # 3. Manejo de código de producto
-    if 'COD_PROD' not in datos.columns:
-        alternativas = ['PRODUCTO', 'ITEM', 'SKU', 'CODIGO']
-        for alt in alternativas:
-            if alt in datos.columns:
-                datos['COD_PROD'] = datos[alt].astype(str)
-                st.warning(f"Usando columna '{alt}' como identificador de producto")
-                break
+    if df is not None:
+        # Sidebar para filtros
+        with st.sidebar:
+            st.header("🔎 Filtros")
+            
+            # Búsqueda por código, descripción o cliente
+            search_option = st.radio("Buscar por:", ["Código", "Descripción", "Cliente"])
+            
+            if search_option == "Código":
+                codigos = sorted(df['COD_PROD'].unique())
+                cod_input = st.selectbox("Seleccione código de producto", codigos)
+            elif search_option == "Descripción":
+                descripciones = sorted(df['Descripcion'].unique())
+                desc_selected = st.selectbox("Seleccione descripción", descripciones)
+                cod_input = df[df['Descripcion'] == desc_selected]['COD_PROD'].iloc[0]
+            else:
+                clientes = sorted(df['CLIENTE'].unique())
+                cliente_sel = st.selectbox("Seleccione cliente", clientes)
+                cod_input = None
+            
+            # Filtro por rango de fechas
+            min_date = df['Fecha'].min().date() if not df['Fecha'].isnull().all() else pd.to_datetime('today').date()
+            max_date = df['Fecha'].max().date() if not df['Fecha'].isnull().all() else pd.to_datetime('today').date()
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                fecha_inicio = st.date_input("Desde", min_date)
+            with col2:
+                fecha_fin = st.date_input("Hasta", max_date)
+            
+            # Filtro por vendedor
+            vendedores = sorted(df['VENDEDOR'].unique())
+            vendedores_sel = st.multiselect("Vendedor(es)", vendedores)
+            
+            # Agrupación opcional
+            group_by = st.selectbox("Agrupar por", ["Ninguno", "Vendedor", "Cliente", "Mes", "Año"])
+
+        # Aplicar filtros
+        if search_option == "Cliente":
+            mask = (
+                (df['CLIENTE'] == cliente_sel) &
+                (df['Fecha'].dt.date >= fecha_inicio) &
+                (df['Fecha'].dt.date <= fecha_fin)
+            )
+            titulo_resultados = f"Ventas para el cliente: {cliente_sel}"
         else:
-            datos['COD_PROD'] = "Sin código"
-            st.warning("No se encontró columna de código de producto")
-    
-    # 4. Manejo de vendedor
-    if 'VENDEDOR' not in datos.columns:
-        alternativas = ['VENDEDOR_NOMBRE', 'EMPLEADO', 'ASESOR']
-        for alt in alternativas:
-            if alt in datos.columns:
-                datos['VENDEDOR'] = datos[alt].astype(str)
-                break
+            mask = (
+                (df['COD_PROD'] == cod_input) &
+                (df['Fecha'].dt.date >= fecha_inicio) &
+                (df['Fecha'].dt.date <= fecha_fin)
+            )
+            producto = df[df['COD_PROD'] == cod_input]['Descripcion'].iloc[0]
+            titulo_resultados = f"Ventas para: {cod_input} - {producto}"
+            
+        if vendedores_sel:
+            mask &= df['VENDEDOR'].isin(vendedores_sel)
+            
+        resultado = df[mask].copy()
+        
+        if not resultado.empty:
+            # SOLUCIÓN DEFINITIVA: Ordenar primero el DataFrame completo
+            resultado = resultado.sort_values('Fecha')
+            
+            # Crear columna de fecha formateada para mostrar
+            resultado['Fecha_formateada'] = resultado['Fecha'].dt.strftime('%d/%m/%Y')
+            
+            st.subheader(titulo_resultados)
+            
+            # Agrupación de datos
+            if group_by != "Ninguno":
+                if group_by == "Mes":
+                    resultado['Grupo'] = resultado['Fecha'].dt.to_period('M').astype(str)
+                elif group_by == "Año":
+                    resultado['Grupo'] = resultado['Fecha'].dt.year.astype(str)
+                elif group_by == "Vendedor":
+                    resultado['Grupo'] = resultado['VENDEDOR']
+                else:  # Cliente
+                    resultado['Grupo'] = resultado['CLIENTE']
+                
+                grouped = resultado.groupby('Grupo').agg({
+                    'Cantidad': 'sum',
+                    'MONTO': 'sum',
+                    'Documento': 'nunique'
+                }).reset_index()
+                grouped.rename(columns={'Documento': 'Transacciones'}, inplace=True)
+                
+                st.subheader(f"📊 Ventas agrupadas por {group_by.lower()}")
+                st.dataframe(grouped)
+                
+                # Gráfico de barras para datos agrupados
+                fig = px.bar(grouped, x='Grupo', y='MONTO', text='MONTO',
+                            title=f"Ventas por {group_by.lower()}",
+                            hover_data=['Cantidad', 'Transacciones'])
+                fig.update_traces(texttemplate='%{text:,.2f}', textposition='outside')
+                st.plotly_chart(fig, use_container_width=True)
+            
+            # Mostrar tabla con detalles - CORRECCIÓN DEFINITIVA
+            st.subheader("📋 Detalle de transacciones")
+            columnas_mostrar = [
+                'CLIENTE', 'VENDEDOR', 'Fecha_formateada', 'Documento', 
+                'Descripcion', 'Cantidad', 'MONTO'
+            ]
+            
+            # DataFrame ya está ordenado por 'Fecha'
+            st.dataframe(
+                resultado[columnas_mostrar].rename(columns={
+                    'Fecha_formateada': 'Fecha',
+                    'MONTO': 'Monto'
+                })
+            )
+            
+            # Mostrar métricas
+            total_cant = resultado['Cantidad'].sum()
+            total_monto = resultado['MONTO'].sum()
+            transacciones = resultado['Documento'].nunique()
+            avg_price = total_monto / total_cant if total_cant > 0 else 0
+            
+            st.subheader("📊 Totales")
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("Total Unidades", f"{total_cant:,.0f}")
+            col2.metric("Total Ventas", f"${total_monto:,.2f}")
+            col3.metric("Precio Promedio", f"${avg_price:,.2f}")
+            col4.metric("Transacciones", f"{transacciones:,.0f}")
+            
+            # Gráfico de serie temporal
+            if len(resultado) > 1:
+                fig = px.line(resultado, x='Fecha', y='MONTO', 
+                             title='Evolución de Ventas por Fecha',
+                             markers=True,
+                             hover_data=['CLIENTE', 'VENDEDOR', 'Cantidad'])
+                st.plotly_chart(fig, use_container_width=True)
+            
+            # Exportar datos
+            st.subheader("💾 Exportar Resultados")
+            export_format = st.radio("Formato de exportación:", ["Excel", "CSV"])
+            
+            # Preparar datos para exportación
+            resultado_export = resultado.copy()
+            resultado_export['Fecha'] = resultado_export['Fecha'].dt.strftime('%d/%m/%Y')
+            
+            if export_format == "Excel":
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                    resultado_export.drop(columns=['Fecha_formateada']).to_excel(
+                        writer, index=False, sheet_name='Detalle')
+                    if group_by != "Ninguno":
+                        grouped.to_excel(writer, index=False, sheet_name='Agrupado')
+                st.download_button(
+                    label="⬇️ Descargar Excel",
+                    data=output.getvalue(),
+                    file_name=f"reporte_ventas.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            else:
+                st.download_button(
+                    label="⬇️ Descargar CSV",
+                    data=resultado_export.drop(columns=['Fecha_formateada'])
+                        .to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8'),
+                    file_name=f"reporte_ventas.csv",
+                    mime="text/csv"
+                )
         else:
-            datos['VENDEDOR'] = "No especificado"
-    
-    # Filtros en sidebar
-    with st.sidebar:
-        st.header("🔎 Filtros de Producto")
-        
-        # Selector de código de producto
-        codigos = sorted(datos['COD_PROD'].unique())
-        cod_input = st.selectbox("Código de producto", codigos, key="cod_prod")
-        
-        # Rango de fechas
-        min_fecha = datos['FECHA_DT'].min().date()
-        max_fecha = datos['FECHA_DT'].max().date()
-        fecha_inicio = st.date_input("Desde", min_fecha, key="fecha_ini")
-        fecha_fin = st.date_input("Hasta", max_fecha, key="fecha_fin")
-        
-        # Filtro por vendedor
-        vendedores = sorted(datos['VENDEDOR'].unique())
-        vendedor_sel = st.selectbox("Vendedor", ["Todos"] + vendedores, key="vendedor")
-    
-    # Aplicar filtros
-    mask = (
-        (datos['COD_PROD'] == cod_input) &
-        (datos['FECHA_DT'].dt.date >= fecha_inicio) &
-        (datos['FECHA_DT'].dt.date <= fecha_fin)
-    )
-    resultado = datos[mask].copy()
-    
-    if vendedor_sel != "Todos":
-        resultado = resultado[resultado['VENDEDOR'] == vendedor_sel]
-    
-    # Mostrar resultados
-    if not resultado.empty:
-        resultado['FECHA'] = resultado['FECHA_DT'].dt.strftime('%d/%m/%Y')
-        
-        # Columnas a mostrar (solo las existentes)
-        columnas_posibles = ['VENDEDOR', 'FECHA', 'PRECIO', 'COD_PROD', 
-                            'DESCRIPCION', 'CANTIDAD', 'MONTO']
-        columnas_mostrar = [col for col in columnas_posibles if col in resultado.columns]
-        
-        st.success(f"🔍 {len(resultado)} registros encontrados")
-        st.dataframe(resultado[columnas_mostrar].sort_values('FECHA_DT'))
-        
-        # Totales
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Total Unidades", f"{resultado['CANTIDAD'].sum():,.0f}")
-        with col2:
-            st.metric("Total Vendido", f"${resultado['MONTO'].sum():,.2f}")
-        
-        # Descarga
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            resultado[columnas_mostrar].to_excel(writer, index=False)
-        st.download_button(
-            label="📥 Descargar resultados",
-            data=output.getvalue(),
-            file_name=f"ventas_{cod_input}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-    else:
-        st.warning("No se encontraron resultados con los filtros aplicados")
+            st.warning("⚠️ No se encontraron resultados con los filtros aplicados")
