@@ -1,3 +1,4 @@
+# requirements.txt debe incluir:
 streamlit
 pandas
 plotly
