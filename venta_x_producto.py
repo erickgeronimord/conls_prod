@@ -1,3 +1,12 @@
+# 1. Configuración de página (primera línea)
+st.set_page_config(...)
+
+# 2. Otras importaciones
+import pandas as pd
+import plotly.express as px
+
+# 3. Resto del código
+
 import streamlit as st
 # Configuración DEBE SER PRIMERO
 st.set_page_config(page_title="Panel de Ventas", layout="wide")
