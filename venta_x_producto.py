@@ -1,5 +1,6 @@
 # 1. Importar streamlit primero
 import streamlit as st
+from datetime import datetime
 
 # 2. Configuración de página
 st.set_page_config(
@@ -19,20 +20,22 @@ try:
     import plotly.express as px
     from io import BytesIO
     import xlsxwriter
+    import time
     
 except ImportError as e:
     st.error(f"❌ Error: Faltan dependencias requeridas. Por favor instale: {str(e)}")
     st.stop()  # Detiene la ejecución si faltan paquetes
 
-# Función para cargar datos desde Google Drive (archivo público)
-@st.cache_data
+# Función para cargar datos desde Google Drive (archivo público) con caché temporal
+@st.cache_data(ttl=3600)  # Actualiza cada hora (3600 segundos)
 def load_data_from_drive():
     try:
         # ID del archivo en Google Drive (extraído de la URL)
         file_id = "104573iwthllgXVuY6C7N4q6xBrjwMlu7"
         
-        # URL de exportación directa como Excel
-        url = f"https://docs.google.com/spreadsheets/d/{file_id}/export?format=xlsx"
+        # URL de exportación directa como Excel con timestamp para evitar caché
+        timestamp = int(time.time())
+        url = f"https://docs.google.com/spreadsheets/d/{file_id}/export?format=xlsx&t={timestamp}"
         
         # Leer el archivo Excel directamente
         df = pd.read_excel(url, engine='openpyxl')
@@ -62,10 +65,26 @@ def load_data_from_drive():
 # 4. Inicio de la aplicación
 st.title("📊 Consulta de Ventas por Producto")
 
-# Cargar datos automáticamente desde Drive
+# Barra superior con controles de actualización
+col1, col2, col3 = st.columns([6, 1, 1])
+with col1:
+    st.write("")  # Espacio para alinear
+with col2:
+    if st.button("🔄 Recargar Datos", help="Actualizar datos desde Google Drive"):
+        st.cache_data.clear()  # Limpiar caché para forzar recarga
+with col3:
+    last_update = st.empty()  # Espacio reservado para mostrar última actualización
+
+# Cargar datos con manejo de estado
+status = st.empty()
+status.info("⏳ Cargando datos desde Google Drive...")
 df = load_data_from_drive()
+status.empty()
 
 if df is not None:
+    # Mostrar última actualización
+    last_update.caption(f"Última actualización: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+    
     # Sidebar para filtros
     with st.sidebar:
         st.header("🔎 Filtros")
@@ -249,3 +268,5 @@ if df is not None:
             
     else:
         st.warning("⚠️ No se encontraron resultados con los filtros aplicados")
+else:
+    st.error("No se pudieron cargar los datos. Por favor intente más tarde o verifique la conexión.")
