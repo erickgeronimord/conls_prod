@@ -280,9 +280,9 @@ with tab2:  # Pestaña del manual de usuario
     st.header("🔍 Instrucciones Básicas")
     with st.expander("🔹 Cómo usar la aplicación", expanded=True):
         st.markdown("""
-        1. **La aplicación carga automáticamente** los datos al iniciar desde Google Drive
-        2. Usa el botón 🔄 en la esquina superior derecha para **forzar una actualización** cuando necesites datos frescos
-        3. Los datos se actualizan automáticamente **cada hora**
+        1. **La aplicación carga automáticamente** los datos cuando un ejecutivo de la empresa los actualice en sus carpetas, en este caso Heyron Morel.
+        2. Usa el botón 🔄 en la esquina superior derecha para **cuando vayas a inicias tu jornada**, de no ver los datos, actualiza nuevamente.
+        3. Los datos se actualizan automáticamente **cada dia, con la informacion del dia anterior**
         4. Siempre podrás ver cuándo fue la **última actualización** en la parte superior
         """)
     
@@ -320,7 +320,7 @@ with tab2:  # Pestaña del manual de usuario
         - Verifica que los filtros no sean demasiado restrictivos
         - Prueba ampliar el rango de fechas
         - Haz clic en el botón 🔄 para recargar los datos
-        - Si el problema persiste, contacta al administrador
+        - Si el problema persiste, contacta al administrador hmorel@bptrack.net
         """)
     
     with st.expander("🔹 ¿Cómo sé que estoy viendo datos actualizados?"):
@@ -331,6 +331,6 @@ with tab2:  # Pestaña del manual de usuario
         """)
     
     st.markdown("---")
-    st.info("ℹ️ Para más ayuda, contacta al equipo de soporte: soporte@empresa.com")
+    st.info("ℹ️ Para más ayuda, contacta al equipo de soporte: hmorel@bptrack.net")
 
 # Nota: Para ejecutar esta aplicación usa el comando: streamlit run nombre_del_archivo.py
