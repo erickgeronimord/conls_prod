@@ -281,8 +281,8 @@ with tab2:  # Pestaña del manual de usuario
     with st.expander("🔹 Cómo usar la aplicación", expanded=True):
         st.markdown("""
         1. **La aplicación carga automáticamente** los datos cuando un ejecutivo de la empresa los actualice en sus carpetas, en este caso Heyron Morel.
-        2. Usa el botón 🔄 en la esquina superior derecha para **cuando vayas a inicias tu jornada**, de no ver los datos, actualiza nuevamente.
-        3. Los datos se actualizan automáticamente **cada dia, con la informacion del dia anterior**
+        2. Usa el botón 🔄 en la esquina superior derecha para **cuando vayas a iniciar tu jornada**, de no ver los datos, actualiza nuevamente.
+        3. Los datos se actualizan automáticamente **cada dia con la informacion del dia anterior**
         4. Siempre podrás ver cuándo fue la **última actualización** en la parte superior
         """)
     
