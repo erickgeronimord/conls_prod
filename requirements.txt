@@ -1,6 +1,11 @@
-# requirements.txt debe incluir:
 streamlit
+from datetime import datetime, timedelta
+hashlib
+sqlite3
+os
 pandas
-plotly
-openpyxl
+plotly.express
+io import BytesIO
 xlsxwriter
+time
+numpy
