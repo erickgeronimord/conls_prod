@@ -1,7 +1,8 @@
 streamlit>=1.22.0
-pandas>=1.3.0
-plotly>=5.0.0
+pandas>=1.5.0
+plotly>=5.11.0
 numpy>=1.21.0
 xlsxwriter>=3.0.0
-sqlite3>=3.35.0  # Normalmente viene con Python, pero lo incluyo por completitud
-python-dateutil>=2.8.2  # Dependencia común para manejo de fechas
+openpyxl>=3.0.0  # Necesario para leer archivos Excel de Google Drive
+sqlite3>=3.35.0  # Normalmente incluido en Python
+python-dateutil>=2.8.2
