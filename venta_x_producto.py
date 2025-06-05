@@ -16,8 +16,6 @@ import numpy as np
 script_dir = os.path.dirname(os.path.abspath(__file__)) if "__file__" in locals() else os.getcwd()
 db_path = os.path.join(script_dir, 'auth.db')
 
-# Configuración de página (se establecerá después de la autenticación)
-
 # 3. FUNCIONES DE BASE DE DATOS Y AUTENTICACIÓN
 def init_auth_db():
     """Inicializa la base de datos de autenticación"""
@@ -122,24 +120,6 @@ def load_data_from_drive():
         st.error(f"❌ Error al cargar el archivo desde Google Drive: {str(e)}")
         return None
 
-@st.cache_data(ttl=3600)
-def load_metas():
-    try:
-        file_id = "1XCTQWTBOZoEyhIOu5flg5gT2ZTT51SOr"
-        url = f"https://docs.google.com/spreadsheets/d/{file_id}/export?format=xlsx"
-        
-        df_metas = pd.read_excel(url, engine='openpyxl')
-        
-        # Limpieza y preparación de datos
-        df_metas['CANTIDAD'] = df_metas['CANTIDAD'].astype(str).str.replace(',', '').astype(float)
-        df_metas['MONTO'] = df_metas['MONTO'].astype(str).str.replace(',', '').astype(float)
-        
-        return df_metas
-        
-    except Exception as e:
-        st.error(f"Error al cargar las metas: {str(e)}")
-        return None
-
 # 5. INTERFAZ DE LOGIN
 def login_section():
     """Muestra la sección de login"""
@@ -199,10 +179,8 @@ def user_status_bar():
 user_status_bar()
 
 # 9. DEFINICIÓN DE PESTAÑAS
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3 = st.tabs([
     "📊 Consulta de Ventas", 
-    "🎯 Metas por Vendedor", 
-    "📈 Comparación Ventas vs Metas",
     "🔧 Administración", 
     "📚 Manual de Usuario"
 ])
@@ -264,18 +242,18 @@ with tab1:
             
             group_by = st.selectbox("Agrupar por", ["Ninguno", "Vendedor", "Cliente", "Mes", "Año"])
 
-        # Aplicar filtros adicionales
+        # Aplicar filtros adicionales (CORRECCIÓN DEL ERROR DE PARÉNTESIS)
         if search_option == "Cliente":
             mask = (
-                (df['CLIENTE'] == cliente_sel) &
-                (df['Fecha'].dt.date >= fecha_inicio) &
+                (df['CLIENTE'] == cliente_sel) & 
+                (df['Fecha'].dt.date >= fecha_inicio) & 
                 (df['Fecha'].dt.date <= fecha_fin)
-            )  # <-- Aquí se cerró el paréntesis que faltaba
+            )
             titulo = f"Ventas para el cliente: {cliente_sel}"
         else:
             mask = (
-                (df['COD_PROD'] == cod_input) &
-                (df['Fecha'].dt.date >= fecha_inicio) &
+                (df['COD_PROD'] == cod_input) & 
+                (df['Fecha'].dt.date >= fecha_inicio) & 
                 (df['Fecha'].dt.date <= fecha_fin)
             )
             producto = df[df['COD_PROD'] == cod_input]['Descripcion'].iloc[0]
@@ -417,218 +395,8 @@ with tab1:
     else:
         st.error("No se pudieron cargar los datos. Por favor intente más tarde o verifique la conexión.")
 
-# 11. PESTAÑA 2: METAS POR VENDEDOR
+# 11. PESTAÑA 2: ADMINISTRACIÓN
 with tab2:
-    st.title("🎯 Metas por Vendedor")
-    
-    df_metas = load_metas()
-    
-    if df_metas is not None:
-        with st.sidebar:
-            st.header("Filtros de Metas")
-            vendedores_metas = sorted(df_metas['VDI'].unique())
-            vendedor_meta_sel = st.selectbox("Seleccionar Vendedor", ['Todos'] + vendedores_metas)
-            
-            categorias = sorted(df_metas['CATEGORIA'].unique())
-            categoria_sel = st.selectbox("Filtrar por Categoría", ['Todas'] + categorias)
-            
-            nivel_agregacion = st.radio("Nivel de detalle", ["Categoría", "Subcategoría", "Producto"])
-        
-        # Aplicar filtros
-        if vendedor_meta_sel != 'Todos':
-            df_filtrado = df_metas[df_metas['VDI'] == vendedor_meta_sel].copy()
-        else:
-            df_filtrado = df_metas.copy()
-            
-        if categoria_sel != 'Todas':
-            df_filtrado = df_filtrado[df_filtrado['CATEGORIA'] == categoria_sel]
-        
-        # Agrupar según nivel seleccionado
-        if nivel_agregacion == "Categoría":
-            df_agrupado = df_filtrado.groupby(['VDI', 'CATEGORIA']).agg({
-                'CANTIDAD': 'sum',
-                'MONTO': 'sum'
-            }).reset_index()
-            df_agrupado['ITEM'] = df_agrupado['CATEGORIA']
-        elif nivel_agregacion == "Subcategoría":
-            df_agrupado = df_filtrado.groupby(['VDI', 'CATEGORIA', 'SUBCATEGORIA']).agg({
-                'CANTIDAD': 'sum',
-                'MONTO': 'sum'
-            }).reset_index()
-            df_agrupado['ITEM'] = df_agrupado['SUBCATEGORIA']
-        else:
-            df_agrupado = df_filtrado.copy()
-            df_agrupado['ITEM'] = df_agrupado['nombre']
-        
-        # Mostrar resultados
-        st.subheader(f"Metas {'por ' + vendedor_meta_sel if vendedor_meta_sel != 'Todos' else 'Totales'}")
-        
-        total_cantidad = df_agrupado['CANTIDAD'].sum()
-        total_monto = df_agrupado['MONTO'].sum()
-        
-        col1, col2 = st.columns(2)
-        col1.metric("Total Cantidad Meta", f"{total_cantidad:,.0f}")
-        col2.metric("Total Monto Meta", f"${total_monto:,.2f}")
-        
-        st.dataframe(df_agrupado.sort_values('MONTO', ascending=False))
-        
-        if len(df_agrupado) > 0:
-            fig = px.bar(
-                df_agrupado,
-                x='ITEM',
-                y='MONTO',
-                color='VDI',
-                title=f"Metas por {nivel_agregacion.lower()}",
-                labels={'MONTO': 'Monto Meta', 'ITEM': nivel_agregacion},
-                hover_data=['CANTIDAD']
-            )
-            st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.error("No se pudieron cargar los datos de metas")
-
-# 12. PESTAÑA 3: COMPARACIÓN VENTAS VS METAS
-with tab3:
-    st.title("📈 Comparación Ventas vs Metas")
-    
-    df_ventas = load_data_from_drive()
-    df_metas = load_metas()
-    
-    if df_ventas is not None and df_metas is not None:
-        # Agregar filtros por mes
-        with st.sidebar:
-            st.header("Filtros de Comparación")
-            
-            # Filtro por mes
-            df_ventas['Mes'] = df_ventas['Fecha'].dt.month
-            meses = sorted(df_ventas['Mes'].unique())
-            mes_sel = st.selectbox("Mes para Comparar", meses)
-            
-            # Filtro por vendedor
-            vendedores_comparar = sorted(df_metas['VDI'].unique())
-            vendedor_comparar_sel = st.selectbox("Vendedor a Comparar", vendedores_comparar)
-            
-            mostrar_solo_faltantes = st.checkbox("Mostrar solo productos con meta no alcanzada")
-        
-        # Filtrar ventas por mes seleccionado
-        df_ventas_filtrado = df_ventas[df_ventas['Mes'] == mes_sel]
-        
-        # Preparar datos de ventas para comparación
-        df_ventas_agrupado = df_ventas_filtrado.groupby(['VENDEDOR', 'Descripcion']).agg({
-            'Cantidad': 'sum',
-            'MONTO': 'sum'
-        }).reset_index()
-        
-        # Unir ambos datasets
-        df_comparacion = pd.merge(
-            df_metas,
-            df_ventas_agrupado,
-            left_on=['VDI', 'nombre'],
-            right_on=['VENDEDOR', 'Descripcion'],
-            how='left'
-        )
-        
-        # Limpiar y calcular diferencias
-        df_comparacion['Cantidad'] = df_comparacion['Cantidad'].fillna(0)
-        df_comparacion['MONTO_y'] = df_comparacion['MONTO_y'].fillna(0)
-        
-        df_comparacion['Diferencia_Cantidad'] = df_comparacion['CANTIDAD'] - df_comparacion['Cantidad']
-        df_comparacion['Diferencia_Monto'] = df_comparacion['MONTO_x'] - df_comparacion['MONTO_y']
-        
-        df_comparacion['%_Avance_Cantidad'] = (df_comparacion['Cantidad'] / df_comparacion['CANTIDAD']) * 100
-        df_comparacion['%_Avance_Monto'] = (df_comparacion['MONTO_y'] / df_comparacion['MONTO_x']) * 100
-        
-        # Filtrar por vendedor seleccionado
-        df_comparacion_filtrado = df_comparacion[df_comparacion['VDI'] == vendedor_comparar_sel]
-        
-        if mostrar_solo_faltantes:
-            df_comparacion_filtrado = df_comparacion_filtrado[
-                (df_comparacion_filtrado['Diferencia_Cantidad'] > 0) | 
-                (df_comparacion_filtrado['Diferencia_Monto'] > 0)
-            ]
-        
-        # Mostrar métricas resumen
-        st.subheader(f"Comparación para: {vendedor_comparar_sel} - Mes {mes_sel}")
-        
-        total_meta_cant = df_comparacion_filtrado['CANTIDAD'].sum()
-        total_venta_cant = df_comparacion_filtrado['Cantidad'].sum()
-        total_meta_monto = df_comparacion_filtrado['MONTO_x'].sum()
-        total_venta_monto = df_comparacion_filtrado['MONTO_y'].sum()
-        
-        avance_cant = (total_venta_cant / total_meta_cant) * 100 if total_meta_cant > 0 else 0
-        avance_monto = (total_venta_monto / total_meta_monto) * 100 if total_meta_monto > 0 else 0
-        
-        col1, col2 = st.columns(2)
-        col1.metric("Avance Cantidad", f"{avance_cant:.1f}%", 
-                   f"{total_venta_cant:,.0f} de {total_meta_cant:,.0f}")
-        col2.metric("Avance Monto", f"{avance_monto:.1f}%", 
-                   f"${total_venta_monto:,.2f} de ${total_meta_monto:,.2f}")
-        
-        # Calcular proyección de fecha para alcanzar meta (si aplica)
-        dias_transcurridos = (datetime.now() - datetime(datetime.now().year, mes_sel, 1)).days
-        if dias_transcurridos > 0 and total_venta_monto > 0:
-            dias_restantes = 30 - dias_transcurridos  # Asumiendo meses de 30 días
-            monto_restante = total_meta_monto - total_venta_monto
-            velocidad_necesaria = monto_restante / dias_restantes if dias_restantes > 0 else 0
-            
-            col3, col4 = st.columns(2)
-            col3.metric("Velocidad Actual", f"${(total_venta_monto/dias_transcurridos):,.2f}/día")
-            col4.metric("Velocidad Necesaria", f"${velocidad_necesaria:,.2f}/día")
-        
-        # Mostrar tabla comparativa
-        st.subheader("Detalle por Producto")
-        
-        columnas_mostrar = [
-            'CATEGORIA', 'SUBCATEGORIA', 'nombre', 
-            'CANTIDAD', 'Cantidad', 'Diferencia_Cantidad', '%_Avance_Cantidad',
-            'MONTO_x', 'MONTO_y', 'Diferencia_Monto', '%_Avance_Monto'
-        ]
-        
-        df_mostrar = df_comparacion_filtrado[columnas_mostrar].rename(columns={
-            'CANTIDAD': 'Meta_Cantidad',
-            'Cantidad': 'Venta_Cantidad',
-            'MONTO_x': 'Meta_Monto',
-            'MONTO_y': 'Venta_Monto',
-            'nombre': 'Producto'
-        })
-        
-        st.dataframe(df_mostrar.style.format({
-            'Meta_Cantidad': '{:,.0f}',
-            'Venta_Cantidad': '{:,.0f}',
-            'Diferencia_Cantidad': '{:,.0f}',
-            '%_Avance_Cantidad': '{:.1f}%',
-            'Meta_Monto': '${:,.2f}',
-            'Venta_Monto': '${:,.2f}',
-            'Diferencia_Monto': '${:,.2f}',
-            '%_Avance_Monto': '{:.1f}%'
-        }))
-        
-        # Gráficos comparativos
-        st.subheader("Análisis Visual")
-        
-        fig1 = px.bar(
-            df_comparacion_filtrado.nlargest(10, 'Diferencia_Monto'),
-            x='nombre',
-            y=['MONTO_x', 'MONTO_y'],
-            title=f'Top 10 Productos con Mayor Diferencia (Mes {mes_sel})',
-            labels={'value': 'Monto', 'variable': 'Tipo', 'nombre': 'Producto'},
-            barmode='group'
-        )
-        st.plotly_chart(fig1, use_container_width=True)
-        
-        fig2 = px.pie(
-            df_comparacion_filtrado,
-            names='CATEGORIA',
-            values='Diferencia_Monto',
-            title='Diferencia por Categoría',
-            hole=0.3
-        )
-        st.plotly_chart(fig2, use_container_width=True)
-        
-    else:
-        st.error("No se pudieron cargar los datos necesarios para la comparación")
-
-# 13. PESTAÑA 4: ADMINISTRACIÓN
-with tab4:
     if st.session_state.get('role') == 'admin':
         st.title("🔧 Panel de Administración")
         
@@ -690,8 +458,8 @@ with tab4:
     else:
         st.warning("⛔ Solo usuarios administradores pueden acceder a esta sección")
 
-# 14. PESTAÑA 5: MANUAL DE USUARIO
-with tab5:
+# 12. PESTAÑA 3: MANUAL DE USUARIO
+with tab3:
     st.title("📚 Manual de Usuario")
     
     st.header("🔍 Instrucciones Básicas")
@@ -709,20 +477,6 @@ with tab5:
         - Visualice las ventas por producto, cliente o vendedor
         - Filtre por fechas, meses o años específicos
         - Exporte los resultados a Excel o CSV
-        """)
-    
-    with st.expander("🔹 Metas por Vendedor"):
-        st.markdown("""
-        - Consulte las metas asignadas a cada vendedor
-        - Vea el desglose por categoría, subcategoría o producto
-        - Filtre por vendedor específico o vea todos
-        """)
-    
-    with st.expander("🔹 Comparación Ventas vs Metas"):
-        st.markdown("""
-        - Compare el desempeño real con las metas establecidas
-        - Vea el porcentaje de avance por producto
-        - Identifique oportunidades de mejora
         """)
     
     with st.expander("🔹 Panel de Administración"):
