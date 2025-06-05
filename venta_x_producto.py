@@ -1,102 +1,43 @@
-# 1. IMPORTACIONES
+# 1. Importar streamlit primero
 import streamlit as st
-from datetime import datetime, timedelta
-import hashlib
-import sqlite3
-import os
-import pandas as pd
-import plotly.express as px
-from io import BytesIO
-import xlsxwriter
-import time
-import numpy as np
+from datetime import datetime
 
-# 2. CONFIGURACIÓN INICIAL
-# Configuración de rutas y base de datos
-script_dir = os.path.dirname(os.path.abspath(__file__)) if "__file__" in locals() else os.getcwd()
-db_path = os.path.join(script_dir, 'auth.db')
+# 2. Configuración de página
+st.set_page_config(
+    page_title="Consulta de Ventas",
+    layout="wide",
+    page_icon="📊",
+    menu_items={
+        'Get Help': 'https://www.example.com/help',
+        'Report a bug': "https://www.example.com/bug",
+        'About': "# Aplicación de análisis de ventas"
+    }
+)
 
-# 3. FUNCIONES DE BASE DE DATOS Y AUTENTICACIÓN
-def init_auth_db():
-    """Inicializa la base de datos de autenticación"""
-    try:
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
-        
-        conn = sqlite3.connect(db_path)
-        c = conn.cursor()
-        
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                username TEXT PRIMARY KEY,
-                password TEXT NOT NULL,
-                name TEXT,
-                role TEXT,
-                last_login TEXT
-            )
-        ''')
-        
-        # Insertar usuario admin inicial si no existe
-        c.execute("SELECT COUNT(*) FROM users WHERE username = 'admin'")
-        if c.fetchone()[0] == 0:
-            admin_pass = hashlib.sha256("admin123".encode()).hexdigest()
-            c.execute(
-                "INSERT INTO users VALUES (?, ?, ?, ?, ?)",
-                ('admin', admin_pass, 'Administrador', 'admin', None)
-            )
-        
-        conn.commit()
-        conn.close()
-        return True
-        
-    except Exception as e:
-        st.error(f"Error al inicializar la base de datos: {str(e)}")
-        return False
+# 3. Otras importaciones con manejo de errores
+try:
+    import pandas as pd
+    import plotly.express as px
+    from io import BytesIO
+    import xlsxwriter
+    import time
+    
+except ImportError as e:
+    st.error(f"❌ Error: Faltan dependencias requeridas. Por favor instale: {str(e)}")
+    st.stop()  # Detiene la ejecución si faltan paquetes
 
-def validate_user(username, password):
-    """Valida las credenciales del usuario"""
-    try:
-        conn = sqlite3.connect(db_path)
-        c = conn.cursor()
-        c.execute(
-            "SELECT name, role, password FROM users WHERE username = ?",
-            (username,)
-        )
-        result = c.fetchone()
-        conn.close()
-        
-        if result and result[2] == hashlib.sha256(password.encode()).hexdigest():
-            return {
-                'name': result[0],
-                'role': result[1],
-                'authenticated': True
-            }
-        return None
-    except Exception as e:
-        st.error(f"Error de autenticación: {str(e)}")
-        return None
-
-def update_last_login(username):
-    """Actualiza la fecha del último login"""
-    try:
-        conn = sqlite3.connect(db_path)
-        c = conn.cursor()
-        c.execute(
-            "UPDATE users SET last_login = ? WHERE username = ?",
-            (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), username)
-        )
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        st.error(f"Error al actualizar último login: {str(e)}")
-
-# 4. FUNCIONES PARA CARGAR DATOS
-@st.cache_data(ttl=3600)
+# Función para cargar datos desde Google Drive (archivo público) con caché temporal
+@st.cache_data(ttl=3600)  # Actualiza cada hora (3600 segundos)
 def load_data_from_drive():
     try:
+        # ID del archivo en Google Drive (extraído de la URL)
         file_id = "104573iwthllgXVuY6C7N4q6xBrjwMlu7"
+        
+        # URL de exportación directa como Excel con timestamp para evitar caché
         timestamp = int(time.time())
         url = f"https://docs.google.com/spreadsheets/d/{file_id}/export?format=xlsx&t={timestamp}"
         
+        # Leer el archivo Excel directamente
         df = pd.read_excel(url, engine='openpyxl')
         
         required_columns = ['CLIENTE', 'COD_PROD', 'Descripcion', 'Documento', 'Fecha', 
@@ -105,6 +46,7 @@ def load_data_from_drive():
             st.error("❌ El archivo no contiene las columnas requeridas")
             return None
             
+        # Conversión de tipos
         df['Fecha'] = pd.to_datetime(df['Fecha'], dayfirst=True, errors='coerce')
         df['COD_PROD'] = df['COD_PROD'].astype(str)
         df['VENDEDOR'] = df['VENDEDOR'].astype(str)
@@ -120,100 +62,36 @@ def load_data_from_drive():
         st.error(f"❌ Error al cargar el archivo desde Google Drive: {str(e)}")
         return None
 
-# 5. INTERFAZ DE LOGIN
-def login_section():
-    """Muestra la sección de login"""
-    st.title("🔒 Acceso al Sistema de Ventas")
-    
-    with st.form("login_form"):
-        username = st.text_input("Nombre de usuario")
-        password = st.text_input("Contraseña", type="password")
-        submitted = st.form_submit_button("Iniciar sesión")
-        
-        if submitted:
-            user = validate_user(username, password)
-            if user:
-                update_last_login(username)
-                st.session_state.update(user)
-                st.session_state['username'] = username
-                st.rerun()
-            else:
-                st.error("Credenciales incorrectas")
+# 4. Crear pestañas
+tab1, tab2 = st.tabs(["📊 Consulta de Ventas", "📚 Manual de Usuario"])
 
-# 6. VERIFICAR AUTENTICACIÓN
-if not init_auth_db():
-    st.error("No se pudo inicializar el sistema de autenticación")
-    st.stop()
-
-if 'authenticated' not in st.session_state:
-    login_section()
-    st.stop()
-
-# 7. CONFIGURACIÓN DE PÁGINA PARA USUARIOS AUTENTICADOS
-st.set_page_config(
-    page_title="Consulta de Ventas",
-    layout="wide",
-    page_icon="📊",
-    menu_items={
-        'Get Help': 'https://www.example.com/help',
-        'Report a bug': "https://www.example.com/bug",
-        'About': "# Aplicación de análisis de ventas"
-    }
-)
-
-# 8. BARRA DE ESTADO DEL USUARIO
-def user_status_bar():
-    """Muestra la barra de estado del usuario"""
-    cols = st.columns([8, 1, 1])
-    with cols[0]:
-        st.write(f"👤 Usuario: {st.session_state.get('name', '')} ({st.session_state.get('role', '')})")
-    with cols[1]:
-        if st.button("🔄 Recargar"):
-            st.rerun()
-    with cols[2]:
-        if st.button("🚪 Salir"):
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
-            st.rerun()
-
-user_status_bar()
-
-# 9. DEFINICIÓN DE PESTAÑAS
-tab1, tab2, tab3 = st.tabs([
-    "📊 Consulta de Ventas", 
-    "🔧 Administración", 
-    "📚 Manual de Usuario"
-])
-
-# 10. PESTAÑA 1: CONSULTA DE VENTAS
-with tab1:
+with tab1:  # Pestaña principal de la aplicación
     st.title("📊 Consulta de Ventas por Producto")
-    
+
+    # Barra superior con controles de actualización
+    col1, col2, col3 = st.columns([6, 1, 1])
+    with col1:
+        st.write("")  # Espacio para alinear
+    with col2:
+        if st.button("🔄 Recargar Datos", help="Actualizar datos desde Google Drive"):
+            st.cache_data.clear()  # Limpiar caché para forzar recarga
+    with col3:
+        last_update = st.empty()  # Espacio reservado para mostrar última actualización
+
+    # Cargar datos con manejo de estado
+    status = st.empty()
+    status.info("⏳ Cargando datos desde Google Drive...")
     df = load_data_from_drive()
-    
+    status.empty()
+
     if df is not None:
-        # Extraer mes y año para filtros
-        df['Mes'] = df['Fecha'].dt.month
-        df['Año'] = df['Fecha'].dt.year
+        # Mostrar última actualización
+        last_update.caption(f"Última actualización: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
         
+        # Sidebar para filtros
         with st.sidebar:
             st.header("🔎 Filtros")
             
-            # Filtro por mes
-            meses_disponibles = sorted(df['Mes'].unique())
-            mes_sel = st.selectbox("Mes", ['Todos'] + meses_disponibles)
-            
-            # Filtro por año
-            años_disponibles = sorted(df['Año'].unique())
-            año_sel = st.selectbox("Año", ['Todos'] + años_disponibles)
-            
-            # Aplicar filtros de fecha
-            if mes_sel != 'Todos':
-                df = df[df['Mes'] == mes_sel]
-            if año_sel != 'Todos':
-                df = df[df['Año'] == año_sel]
-            
-            # Resto de filtros
             search_option = st.radio("Buscar por:", ["Código", "Descripción", "Cliente"])
             
             if search_option == "Código":
@@ -242,18 +120,18 @@ with tab1:
             
             group_by = st.selectbox("Agrupar por", ["Ninguno", "Vendedor", "Cliente", "Mes", "Año"])
 
-        # Aplicar filtros adicionales (CORRECCIÓN DEL ERROR DE PARÉNTESIS)
+        # Aplicar filtros
         if search_option == "Cliente":
             mask = (
-                (df['CLIENTE'] == cliente_sel) & 
-                (df['Fecha'].dt.date >= fecha_inicio) & 
+                (df['CLIENTE'] == cliente_sel) &
+                (df['Fecha'].dt.date >= fecha_inicio) &
                 (df['Fecha'].dt.date <= fecha_fin)
             )
             titulo = f"Ventas para el cliente: {cliente_sel}"
         else:
             mask = (
-                (df['COD_PROD'] == cod_input) & 
-                (df['Fecha'].dt.date >= fecha_inicio) & 
+                (df['COD_PROD'] == cod_input) &
+                (df['Fecha'].dt.date >= fecha_inicio) &
                 (df['Fecha'].dt.date <= fecha_fin)
             )
             producto = df[df['COD_PROD'] == cod_input]['Descripcion'].iloc[0]
@@ -389,101 +267,68 @@ with tab1:
                     )
             except Exception as e:
                 st.error(f"Error al exportar: {str(e)}")
+                st.info("ℹ️ Si el error persiste, intente exportar como CSV o instale xlsxwriter manualmente")
                 
         else:
             st.warning("⚠️ No se encontraron resultados con los filtros aplicados")
     else:
         st.error("No se pudieron cargar los datos. Por favor intente más tarde o verifique la conexión.")
 
-# 11. PESTAÑA 2: ADMINISTRACIÓN
-with tab2:
-    if st.session_state.get('role') == 'admin':
-        st.title("🔧 Panel de Administración")
-        
-        try:
-            conn = sqlite3.connect(db_path)
-            users_df = pd.read_sql("SELECT username, name, role, last_login FROM users", conn)
-            
-            # Gestión de usuarios
-            st.subheader("Usuarios Registrados")
-            st.dataframe(users_df)
-            
-            # Formulario para agregar/actualizar usuarios
-            with st.expander("Agregar/Editar Usuario", expanded=True):
-                with st.form("user_form"):
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        new_username = st.text_input("Nombre de usuario")
-                        new_name = st.text_input("Nombre completo")
-                    with col2:
-                        new_role = st.selectbox("Rol", ["user", "admin"])
-                        new_password = st.text_input("Contraseña", type="password")
-                    
-                    submitted = st.form_submit_button("Guardar Usuario")
-                    
-                    if submitted:
-                        if not new_username or not new_password:
-                            st.error("Usuario y contraseña son requeridos")
-                        else:
-                            try:
-                                hashed_pass = hashlib.sha256(new_password.encode()).hexdigest()
-                                conn.execute(
-                                    "INSERT OR REPLACE INTO users VALUES (?, ?, ?, ?, ?)",
-                                    (new_username, hashed_pass, new_name, new_role, None)
-                                )
-                                conn.commit()
-                                st.success("Usuario guardado correctamente")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Error: {str(e)}")
-            
-            # Eliminar usuarios
-            with st.expander("Eliminar Usuario", expanded=False):
-                with st.form("delete_form"):
-                    del_user = st.selectbox(
-                        "Seleccionar usuario a eliminar",
-                        users_df['username'].tolist()
-                    )
-                    submitted_delete = st.form_submit_button("Eliminar Usuario")
-                    if submitted_delete and del_user != "admin":
-                        conn.execute("DELETE FROM users WHERE username = ?", (del_user,))
-                        conn.commit()
-                        st.success(f"Usuario {del_user} eliminado")
-                        st.rerun()
-            
-        except Exception as e:
-            st.error(f"Error en panel de administración: {str(e)}")
-        finally:
-            conn.close()
-    else:
-        st.warning("⛔ Solo usuarios administradores pueden acceder a esta sección")
-
-# 12. PESTAÑA 3: MANUAL DE USUARIO
-with tab3:
+with tab2:  # Pestaña del manual de usuario
     st.title("📚 Manual de Usuario")
     
     st.header("🔍 Instrucciones Básicas")
     with st.expander("🔹 Cómo usar la aplicación", expanded=True):
         st.markdown("""
-        1. **Inicie sesión** con sus credenciales asignadas
-        2. Navegue entre las diferentes pestañas usando el menú superior
-        3. Use los filtros en el panel izquierdo para ajustar los resultados
-        4. Los datos se actualizan automáticamente desde Google Drive
+        1. **La aplicación carga automáticamente** los datos cuando un ejecutivo de la empresa los actualice en sus carpetas, en este caso Heyron Morel.
+        2. Usa el botón 🔄 en la esquina superior derecha para **cuando vayas a iniciar tu jornada**, de no ver los datos, actualiza nuevamente.
+        3. Los datos se actualizan automáticamente **cada dia con la informacion del dia anterior**
+        4. Siempre podrás ver cuándo fue la **última actualización** en la parte superior
         """)
     
-    st.header("📊 Pestañas Disponibles")
-    with st.expander("🔹 Consulta de Ventas"):
+    st.header("🎛️ Panel de Filtros")
+    with st.expander("🔹 Cómo filtrar los datos"):
         st.markdown("""
-        - Visualice las ventas por producto, cliente o vendedor
-        - Filtre por fechas, meses o años específicos
-        - Exporte los resultados a Excel o CSV
+        - **Buscar por**: Selecciona si quieres filtrar por código de producto, descripción o cliente
+        - **Rango de fechas**: Define el período que deseas analizar
+        - **Vendedor(es)**: Selecciona uno o múltiples vendedores (opcional)
+        - **Agrupar por**: Elige cómo deseas agrupar los resultados para los resúmenes
         """)
     
-    with st.expander("🔹 Panel de Administración"):
+    st.header("📊 Visualización de Datos")
+    with st.expander("🔹 Cómo interpretar los resultados"):
         st.markdown("""
-        - Gestiona usuarios y permisos (solo para administradores)
-        - Agregue, edite o elimine usuarios del sistema
+        - **Ventas agrupadas**: Tabla resumen con los totales según tu agrupación seleccionada
+        - **Gráfico de barras**: Muestra visualmente los montos por grupo
+        - **Detalle de transacciones**: Listado completo de todas las ventas que cumplen con los filtros
+        - **Métricas clave**: Total unidades, ventas, precios promedios y más
+        - **Gráfico de evolución**: Muestra cómo han variado las ventas en el tiempo
+        """)
+    
+    st.header("💾 Exportación de Resultados")
+    with st.expander("🔹 Cómo exportar los datos"):
+        st.markdown("""
+        - Selecciona el formato de exportación (Excel o CSV)
+        - Haz clic en el botón de descarga
+        - El archivo se guardará en tu dispositivo con todos los datos filtrados
+        - **Excel** incluye dos hojas: Detalle y Datos agrupados
+        """)
+    
+    st.header("❓ Preguntas Frecuentes")
+    with st.expander("🔹 ¿Qué hago si no veo datos?"):
+        st.markdown("""
+        - Verifica que los filtros no sean demasiado restrictivos
+        - Prueba ampliar el rango de fechas
+        - Haz clic en el botón 🔄 para recargar los datos
+        - Si el problema persiste, contacta al administrador hmorel@bptrack.net
+        """)
+    
+    with st.expander("🔹 ¿Cómo sé que estoy viendo datos actualizados?"):
+        st.markdown("""
+        - La aplicación muestra la **hora de última actualización** en la parte superior
+        - Los datos se actualizan automáticamente cada hora
+        - Puedes forzar una actualización manual con el botón 🔄
         """)
     
     st.markdown("---")
-    st.info("ℹ️ Para más ayuda, contacte al administrador: hmorel@bptrack.net")
+    st.info("ℹ️ Para más ayuda, contacta al equipo de soporte: hmorel@bptrack.net")
