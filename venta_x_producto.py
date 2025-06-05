@@ -9,7 +9,7 @@ st.set_page_config(
     page_icon="📊",
     menu_items={
         'Get Help': 'https://www.example.com/help',
-        'Report a bug': "hmorel@bptrack.net",
+        'Report a bug': "https://www.example.com/bug",
         'About': "# Aplicación de análisis de ventas"
     }
 )
